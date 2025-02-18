@@ -1,190 +1,90 @@
-<# 
-Script Name: GatherSystemInfo.ps1
-Description: This script collects and logs system information for a specific room location and device.
-             It retrieves details like system model, device type, hardware specifications, OS details, and performance metrics.
-Output: Log file containing the gathered information.
-#>
-
-# Prompt for Room and device info
-$Room = Read-Host -Prompt "Enter Room Location"
-$deviceInfo = Read-Host -Prompt "Enter Device Information"
-
-# Function to format system model information
-function Format-SystemModel {
-    param (
-        [Parameter(Mandatory=$true)]
-        $SystemModelInfo
-    )
-
-    if ($SystemModelInfo.Manufacturer -eq "System manufacturer" -and $SystemModelInfo.Model -eq "System Product Name") { 
-        return "Custom Build" 
-    } else { 
-        return "$($SystemModelInfo.Manufacturer) $($SystemModelInfo.Model)" 
+# Prompt user to select save location
+Write-Host "Choose where to save the device information:" 
+Write-Host "1. USB Drive (if available)"
+Write-Host "2. Current directory"
+$choice = Read-Host "Enter your choice (1 or 2)"
+ 
+# Determine save path based on user choice
+if ($choice -eq "1") {
+    $removableDrives = Get-Volume | Where-Object { $_.DriveType -eq 'Removable' }
+    if ($removableDrives) {
+        Write-Host "Detected the following removable drives:"
+        $removableDrives | ForEach-Object { Write-Host "$($_.DriveLetter): $($_.FileSystemLabel)" }
+        $pendriveLetter = Read-Host "Enter the drive letter of the USB drive (e.g., D)"
+        $outputPath = "$($pendriveLetter):\SiteAudit_DeviceInfo.csv"
+    } else {
+        Write-Host "No removable drives detected. Defaulting to script directory."
+        $outputPath = Join-Path -Path (Get-Location) -ChildPath "SiteAudit_DeviceInfo.csv"
     }
+} else {
+    $outputPath = Join-Path -Path (Get-Location) -ChildPath "SiteAudit_DeviceInfo.csv"
 }
-
-# Function to get formatted system age
-function Get-FormattedSystemAge {
-    $biosDate = [Management.ManagementDateTimeConverter]::ToDateTime((Get-WmiObject -Class Win32_BIOS).ReleaseDate)
-    $currentDate = Get-Date
-    $age = New-TimeSpan -Start $biosDate -End $currentDate
-    $years = [math]::Floor($age.TotalDays / 365)
-    $months = [math]::Floor(($age.TotalDays % 365) / 30)
-    $days = [math]::Floor($age.TotalDays % 30)
-    return "$years years, $months months, $days days old"
+ 
+# Check if the output file exists
+$appendMode = Test-Path $outputPath
+ 
+# Prompt user for additional information
+$location = Read-Host "Enter the location of this device (e.g., Room 101, Lab A)"
+$owner = Read-Host "Enter the name of the person this device belongs to (e.g., John Doe)"
+$description = Read-Host "Enter a description for this device"
+ 
+# Function to calculate detailed age
+function Calculate-Age {
+    param([datetime]$StartDate)
+    $now = Get-Date
+    $span = $now - $StartDate
+    $years = ($span.Days / 365.25) -as [int]
+    $remainingDays = $span.Days % 365.25
+    $months = ($remainingDays / 30) -as [int]
+    $days = $remainingDays % 30
+    return "$years years, $months months, $days days"
 }
-
-# Function to format storage information
-function Format-StorageInfo {
-    param (
-        [Parameter(Mandatory=$true)]
-        $StorageInfo
-    )
-
-    $storageFormatted = $StorageInfo | ForEach-Object {
-        "$($_.Name): Used Space: $($_.Used / 1GB -as [int]) GB, Free Space: $($_.Free / 1GB -as [int]) GB, Used(%): $($_.'Used(%)')"
-    }
-
-    return $storageFormatted -join '; '
-}
-
-# Function to format RAM information
-function Format-RAMInfo {
-    param (
-        [Parameter(Mandatory=$true)]
-        $RAMInfo
-    )
-
-    $totalRam = ($RAMInfo | Measure-Object Capacity -Sum).Sum / 1GB
-    $ramType = $RAMInfo[0].Type
-    return "Total: $totalRam GB, Type: $ramType"
-}
-
-# Function to format OS information
-function Format-OSInfo {
-    param (
-        [Parameter(Mandatory=$true)]
-        $OSInfo
-    )
-
-    return "$($OSInfo.Caption) (Version: $($OSInfo.Version))"
-}
-
-# Function to get the last logged in users
-function Get-LastLoggedInUsers {
-    param (
-        [Parameter(Mandatory=$true)]
-        [int]
-        $MaxEvents
-    )
-
-    $lastUsers = Get-WinEvent -LogName Security -FilterXPath "*[System[EventID=4624]]" -MaxEvents $MaxEvents |
-                 Select-Object @{Name='User'; Expression={$_.Properties[5].Value}} -Unique
-
-    return $lastUsers.User -join ', '
-}
-
-# Function to format OS details
-function Format-OSDetails {
-    $osInstallDateFormatted = [Management.ManagementDateTimeConverter]::ToDateTime((Get-WmiObject -Class Win32_OperatingSystem).InstallDate)
-    $lastBootUpTime = [Management.ManagementDateTimeConverter]::ToDateTime((Get-WmiObject -Class Win32_OperatingSystem).LastBootUpTime)
-    $systemUptimeFormatted = New-TimeSpan -Start $lastBootUpTime -End (Get-Date)
-    return "Install Date: $osInstallDateFormatted, Uptime: $($systemUptimeFormatted.Days) Days, $($systemUptimeFormatted.Hours) Hours"
-}
-
-# Function to get antivirus status
-function Get-AntivirusStatus {
-    try {
-        $antivirusStatus = Get-WmiObject -Namespace "root\SecurityCenter2" -Class AntiVirusProduct
-        if ($antivirusStatus) {
-            return ($antivirusStatus | ForEach-Object { $_.displayName }) -join ', '
+ 
+# Function to get drive details
+function Get-DriveStorageInfo {
+    $drives = Get-Volume | Where-Object { $_.DriveLetter -ne $null }
+    $result = @()
+    foreach ($drive in $drives) {
+        $totalSpaceGB = $drive.Size / 1GB
+        $usedSpaceGB = ($drive.Size - $drive.SizeRemaining) / 1GB
+        $percentUsed = if ($drive.Size -ne 0) {
+            "{0:P2}" -f (($drive.Size - $drive.SizeRemaining) / $drive.Size)
         } else {
-            return "Not Detected/Not Reporting"
+            "N/A"
         }
-    } catch {
-        Write-Warning "Unable to determine antivirus status. Error: $_"
-        return "Unavailable"
+        $result += "$($_.DriveLetter): Total: {0:N2} GB, Used: {1:N2} GB, Usage: {2}" -f $totalSpaceGB, $usedSpaceGB, $percentUsed
     }
+    return $result -join "; "
 }
-
-# Function to get performance information
-function Get-PerformanceInfo {
-    $cpuLoadPercentage = (Get-WmiObject -Class Win32_Processor | Measure-Object -Property LoadPercentage -Average).Average
-    $cpuUsageFormatted = if ($cpuLoadPercentage -ne $null) { "$cpuLoadPercentage%" } else { "Unavailable" }
-
-    $osMemory = Get-WmiObject -Class Win32_OperatingSystem
-    $freeMemoryMB = $osMemory.FreePhysicalMemory
-    $totalMemoryMB = $osMemory.TotalVisibleMemorySize
-    $freeMemoryGB = [math]::Round($freeMemoryMB / 1MB, 2)
-    $totalMemoryGB = [math]::Round($totalMemoryMB / 1MB, 2)
-    $memoryUsageFormatted = "Free Memory: $freeMemoryGB GB, Total Memory: $totalMemoryGB GB"
-
-    return "CPU Usage: $cpuUsageFormatted, Memory: $memoryUsageFormatted"
+ 
+# Gather device information (ensure all columns are included)
+$deviceInfo = [PSCustomObject]@{
+    Timestamp         = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+    Location          = $location
+    Owner             = $owner
+    Description       = $description
+    DeviceType        = if ((Get-CimInstance -ClassName Win32_ComputerSystem).PCSystemType -eq 1) { "Desktop" } else { "Laptop" }
+    Brand             = (Get-CimInstance -ClassName Win32_ComputerSystem).Manufacturer
+    Name              = (Get-CimInstance -ClassName Win32_ComputerSystem).Name
+    Model             = (Get-CimInstance -ClassName Win32_ComputerSystemProduct).Version
+    OS                = (Get-CimInstance -ClassName Win32_OperatingSystem).Caption
+    OSVersion         = (Get-CimInstance -ClassName Win32_OperatingSystem).Version
+    LastBootTime      = ((Get-CimInstance -ClassName Win32_OperatingSystem).LastBootUpTime -as [datetime])
+    RAM               = "{0:N2} GB" -f ((Get-CimInstance -ClassName Win32_ComputerSystem).TotalPhysicalMemory / 1GB)
+    RAMPercentageUsed = ""
+    Age               = Calculate-Age -StartDate ((Get-CimInstance -ClassName Win32_BIOS).ReleaseDate -as [datetime])
+    CPU               = (Get-CimInstance -ClassName Win32_Processor).Name
+    CPUUsage          = "{0:P2}" -f ((Get-Counter "\Processor(_Total)\% Processor Time").CounterSamples.CookedValue / 100)
+    Drives            = Get-DriveStorageInfo
+    NetworkAdapters   = (Get-NetAdapter | Where-Object { $_.Status -eq "Up" } | ForEach-Object { "$($_.Name): $($_.MacAddress)" }) -join "; "
+    IPAddresses       = (Get-NetIPAddress | Where-Object { $_.AddressState -eq "Preferred" -and $_.AddressFamily -eq "IPv4" } | ForEach-Object { "$($_.IPAddress) ($($_.InterfaceAlias))" }) -join "; "
 }
-
-# Function to log system information
-function Log-SystemInfo {
-    param (
-        [Parameter(Mandatory=$true)]
-        $InfoObject,
-        [Parameter(Mandatory=$true)]
-        [string]
-        $Room
-    )
-
-    $logFileName = "SystemInfoLog_Room_$Room.txt"
-    $logFile = [System.IO.Path]::Combine([System.Environment]::GetFolderPath('MyDocuments'), $logFileName)
-    $InfoObject | Out-File $logFile -Force
+ 
+# Export the information to the CSV
+if ($appendMode) {
+    $deviceInfo | Export-Csv -Path $outputPath -NoTypeInformation -Append
+} else {
+    $deviceInfo | Export-Csv -Path $outputPath -NoTypeInformation -Force
 }
-
-# Function to display system information
-function Display-SystemInfo {
-    param (
-        [Parameter(Mandatory=$true)]
-        $InfoObject
-    )
-
-    $InfoObject | Format-Table -AutoSize
-}
-
-# Main function to gather and process system information
-function Get-SystemInfo {
-    try {
-        $systemModelInfo = Get-WmiObject -Class Win32_ComputerSystem | Select-Object Manufacturer, Model
-        $deviceType = if (Get-WmiObject -Class Win32_Battery) { "Laptop" } else { "Desktop/PC" }
-        $graphicsCardInfo = Get-WmiObject -Class Win32_VideoController | Select-Object -First 1 Name
-        $storageInfo = Get-PSDrive -PSProvider FileSystem | Select-Object Name, Used, Free, @{Name='Used(%)'; Expression={"{0:N2}%" -f (($_.Used / ($_.Used + $_.Free)) * 100)}}
-        $ramInfo = Get-WmiObject -Class Win32_PhysicalMemory | Select-Object @{Name='Type'; Expression={Switch ($_.SMBIOSMemoryType) {24 {'DDR3'} 26 {'DDR4'} Default {'Other'}}}}, Capacity
-        $cpuInfo = Get-WmiObject -Class Win32_Processor | Select-Object Name, LoadPercentage
-        $osInfo = Get-WmiObject -Class Win32_OperatingSystem | Select-Object Caption, Version
-
-        # Combine all information into a single object with formatted sections
-        return [PSCustomObject]@{
-            Room = $Room
-            DeviceInfo = $deviceInfo
-            SystemModel = Format-SystemModel -SystemModelInfo $systemModelInfo
-            DeviceType = $deviceType
-            GraphicsCard = $graphicsCardInfo.Name
-            Storage = Format-StorageInfo -StorageInfo $storageInfo
-            RAM = Format-RAMInfo -RAMInfo $ramInfo
-            CPU = $cpuInfo.Name
-            SystemAge = Get-FormattedSystemAge
-            OS = Format-OSInfo -OSInfo $osInfo
-            Hostname = $env:COMPUTERNAME
-            Domain = (Get-WmiObject -Class Win32_ComputerSystem).Domain
-            LastLoggedInUsers = Get-LastLoggedInUsers -MaxEvents 3
-            OS_Details = Format-OSDetails
-            Antivirus = Get-AntivirusStatus
-            Performance = Get-PerformanceInfo
-        }
-    } catch {
-        Write-Error "Failed to gather system information. Error: $_"
-    }
-}
-
-# Execute and display results
-$infoObject = Get-SystemInfo
-if ($infoObject) {
-    Log-SystemInfo -InfoObject $infoObject -Room $Room
-    Display-SystemInfo -InfoObject $infoObject
-}
+ 
+Write-Host "Device information exported to $outputPath"
