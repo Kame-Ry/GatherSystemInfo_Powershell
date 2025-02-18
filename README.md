@@ -1,48 +1,41 @@
 # GatherSystemInfo.ps1
 
-This PowerShell script collects detailed system information for a specific room location and device. It's designed to retrieve and log various system details including the system model, device type, hardware specifications, OS details, and performance metrics. The information is saved in a log file for further analysis or documentation purposes.
+This PowerShell script collects comprehensive device information for site audits and inventory management. It prompts users for additional details such as the device location, owner, and a brief description, and then gathers extensive system and hardware data. The collected information—including system type, brand, model, operating system details, performance metrics, drive storage, network adapters, and IP addresses—is exported as a CSV file for easy analysis and documentation.
 
 ## Features
 
-- Prompt for room location and device information.
-- Collect system model, device type, and hardware specifications.
-- Retrieve OS details and performance metrics.
-- Log the gathered information in a structured format.
-- Format and display storage, RAM, OS, and performance information.
+User Input Prompts:
+
+    - Choose the save location (USB drive if available or current directory).
+    - Enter device location (e.g., Room 101, Lab A), owner, and description.
+
+System & Hardware Information:
+
+    - Identifies device type (Desktop or Laptop), brand, and model.
+    - Retrieves operating system details (caption and version) and last boot time.
+    - Calculates detailed system age based on BIOS release date.
+    - Gathers RAM size, CPU information, and current CPU usage.
+
+Storage & Network Details:
+
+    - Formats drive storage details including total space, used space, and usage percentage.
+    - Retrieves active network adapter information and associated IP addresses.
+
+Data Export:
+
+    - Exports all collected data to a CSV file (SiteAudit_DeviceInfo.csv) in the chosen save location.
 
 ## Requirements
 
-- Windows PowerShell 5.1 or newer.
-- Administrative privileges may be required to access certain system information.
+    - Windows PowerShell 5.1 or newer.
+    - Administrative privileges may be required to access certain system information.
 
 ## Usage
 
-1. **Start PowerShell:** Open PowerShell with administrative privileges.
-2. **Execute the Script:** Navigate to the directory containing the script and run:
-
-    ```powershell
-    .\GatherSystemInfo.ps1
-    ```
-
-3. **Enter Required Information:** When prompted, enter the room location and device information.
-
-## Script Functions Overview
-
-- **`Format-SystemModel`**: Formats the system model information for easy reading.
-- **`Get-FormattedSystemAge`**: Calculates and formats the age of the system based on the BIOS release date.
-- **`Format-StorageInfo`**: Formats storage device information including used space, free space, and used percentage.
-- **`Format-RAMInfo`**: Gathers and formats RAM specifications.
-- **`Format-OSInfo`**: Formats operating system details.
-- **`Get-LastLoggedInUsers`**: Retrieves a list of the last logged-in users.
-- **`Format-OSDetails`**: Formats operating system installation date and uptime.
-- **`Get-AntivirusStatus`**: Checks and formats the antivirus status.
-- **`Get-PerformanceInfo`**: Gathers and formats CPU and memory usage information.
-- **`Log-SystemInfo`**: Logs the gathered system information to a file.
-- **`Display-SystemInfo`**: Displays the gathered information in a formatted table.
-
-## Output
-
-The script generates a log file named `SystemInfoLog_Room_<Room Name>.txt` in the user's Documents folder. This file contains all the gathered system information in a structured and readable format.
+    1. **Start PowerShell:** Open PowerShell with administrative privileges.
+    2. **Execute the Script:** Navigate to the directory containing the script and run:
+    .\GatherSystemInfo.ps1 
+    3. **Enter Required Information:** When prompted, enter the room location and device information.
 
 ## Notes
 
