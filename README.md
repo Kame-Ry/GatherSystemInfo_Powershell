@@ -41,3 +41,5 @@ Data Export:
 
 - Ensure you have the necessary permissions to run scripts and access system information.
 - The script may be modified to include additional system details as required.
+
+https://roadmap.sh/projects/server-stats
